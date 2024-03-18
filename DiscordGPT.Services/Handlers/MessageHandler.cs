@@ -27,8 +27,7 @@ namespace DiscordGPT.Services.Handlers
 
             if (message.Channel is IDMChannel)
             {
-                var response = await _chatService.ProcessMessageAsync(message.Author.Id.ToString(), message.Content);
-                await message.Channel.SendMessageAsync(response);
+                await _chatService.ProcessMessageAsync(message.Author.Id.ToString(), message.Content,message.Channel, message.Attachments.Select(x => x.Url).ToArray());
             }
         }
     }

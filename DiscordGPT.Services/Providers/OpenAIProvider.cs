@@ -25,8 +25,9 @@ namespace DiscordGPT.Services.Providers
         {
             var conversation = _openAI.Chat.CreateConversation();
 
-            conversation.Model = Model.GPT4_Turbo;
+            conversation.Model = Model.GPT4_Vision;
             conversation.RequestParameters.Temperature = 0.7;
+            conversation.RequestParameters.MaxTokens = 4096;
 
             conversation.AppendSystemMessage("You are a helpful Discord Bot called DiscordGPT. A user starts a conversation with you via direct messages, and you will assist them with their queries.");
 

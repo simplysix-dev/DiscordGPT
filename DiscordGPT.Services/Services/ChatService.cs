@@ -1,16 +1,15 @@
-﻿using DiscordGPT.Services.Interfaces;
-using DiscordGPT.Services.Providers;
+﻿using Discord.Rest;
+using Discord.WebSocket;
+using DiscordGPT.Services.Interfaces;
 using OpenAI_API.Chat;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
+using static OpenAI_API.Chat.ChatMessage;
 
 namespace DiscordGPT.Services.Services
 {
-    public class ChatService : IChatService
+    public class ChatService : IChatService 
     {
         private readonly IOpenAIProvider _openAIProvider;
         private readonly ConcurrentDictionary<string, Conversation> _userConversations = new ConcurrentDictionary<string, Conversation>();
@@ -21,15 +20,55 @@ namespace DiscordGPT.Services.Services
             _userConversations = new ConcurrentDictionary<string, Conversation>();
         }
 
-        public async Task<string> ProcessMessageAsync(string userId, string message)
+        public async Task ProcessMessageAsync(string userId, string message, ISocketMessageChannel channel, params string[] imageUrls)
         {
             var conversation = _userConversations.GetOrAdd(userId, _ => _openAIProvider.CreateNewConversation());
+            conversation.AppendUserInput(message, imageUrls.Select(x => ImageInput.FromImageUrl(x)).ToArray());
 
-            conversation.AppendUserInput(message);
+            string accumulatedResponse = "";
+            RestUserMessage discordMessage = null;
+            var updateTask = Task.CompletedTask;
 
-            string response = await conversation.GetResponseFromChatbotAsync();
+            await foreach (var res in conversation.StreamResponseEnumerableFromChatbotAsync())
+            {
+                accumulatedResponse += res;
 
-            return response;
+                if (updateTask.IsCompleted)
+                {
+                    updateTask = Task.Run(async () =>
+                    {
+                        await Task.Delay(2000);
+
+                        if (discordMessage == null)
+                        {
+                            discordMessage = await channel.SendMessageAsync(accumulatedResponse);
+                        }
+                        else
+                        {
+                            if (accumulatedResponse.Length >= 2000)
+                            {
+                                var cutOffPoint = FindLastWordBoundary(accumulatedResponse, 2000);
+                                var subMessage = accumulatedResponse.Substring(0, cutOffPoint);
+                                await discordMessage.ModifyAsync(msg => msg.Content = subMessage);
+                                accumulatedResponse = accumulatedResponse.Substring(cutOffPoint);
+                                discordMessage = await channel.SendMessageAsync(accumulatedResponse);
+                            }
+                            else
+                            {
+                                await discordMessage.ModifyAsync(msg => msg.Content = accumulatedResponse);
+                            }
+                        }
+                    });
+                }
+            }
+
+            await updateTask;
+        }
+
+        private int FindLastWordBoundary(string message, int maxLength)
+        {
+            int lastSpace = message.LastIndexOf('.', maxLength);
+            return lastSpace > 0 ? lastSpace + 1 : maxLength;
         }
     }
 }
